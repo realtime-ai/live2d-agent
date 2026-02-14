@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice-Driven Live2D Demo</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            color: #e0e0e0;
+            user-select: none;
+        }
+
+        #canvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Top Bar */
+        .top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.5), transparent);
+        }
+
+        .top-bar h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+        }
+
+        .top-bar .model-select-wrapper {
+            position: relative;
+        }
+
+        .top-bar select {
+            appearance: none;
+            padding: 8px 36px 8px 14px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        .top-bar select:hover {
+            background: rgba(255,255,255,0.18);
+            border-color: rgba(255,255,255,0.35);
+        }
+
+        .model-select-wrapper::after {
+            content: '\25BC';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(255,255,255,0.6);
+            pointer-events: none;
+            font-size: 10px;
+        }
+
+        /* Bottom Controls */
+        .controls {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 12px 24px;
+            background: rgba(0, 0, 0, 0.45);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 16px;
+            z-index: 10;
+        }
+
+        /* Mic Button */
+        .mic-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.25);
+            background: rgba(255,255,255,0.08);
+            color: #fff;
+            font-size: 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .mic-btn:hover {
+            background: rgba(255,255,255,0.15);
+            border-color: rgba(255,255,255,0.4);
+            transform: scale(1.05);
+        }
+
+        .mic-btn.active {
+            background: rgba(255, 64, 129, 0.3);
+            border-color: #ff4081;
+            box-shadow: 0 0 20px rgba(255, 64, 129, 0.3);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(255, 64, 129, 0.3); }
+            50% { box-shadow: 0 0 30px rgba(255, 64, 129, 0.5); }
+        }
+
+        /* Volume Meter */
+        .volume-meter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 160px;
+        }
+
+        .volume-meter-label {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            white-space: nowrap;
+        }
+
+        .volume-bar-container {
+            flex: 1;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            overflow: hidden;
+            min-width: 100px;
+        }
+
+        .volume-bar {
+            height: 100%;
+            width: 0%;
+            border-radius: 3px;
+            background: linear-gradient(90deg, #4fc3f7, #ff4081);
+            transition: width 0.05s ease-out;
+        }
+
+        /* Sensitivity slider */
+        .sensitivity-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sensitivity-control label {
+            font-size: 12px;
+            color: rgba(255,255,255,0.6);
+            white-space: nowrap;
+        }
+
+        .sensitivity-control input[type="range"] {
+            width: 80px;
+            accent-color: #ff4081;
+            cursor: pointer;
+        }
+
+        /* Status Toast */
+        .status-toast {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 16px 32px;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            font-size: 16px;
+            color: #fff;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.4s;
+            pointer-events: none;
+            text-align: center;
+        }
+
+        .status-toast.visible {
+            opacity: 1;
+        }
+
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            transition: opacity 0.6s;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loading-spinner {
+            width: 48px;
+            height: 48px;
+            border: 3px solid rgba(255,255,255,0.15);
+            border-top-color: #ff4081;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            margin-top: 16px;
+            font-size: 15px;
+            color: rgba(255,255,255,0.7);
+        }
+
+        /* Help hint */
+        .help-hint {
+            position: fixed;
+            bottom: 92px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 13px;
+            color: rgba(255,255,255,0.4);
+            z-index: 10;
+            text-align: center;
+            pointer-events: none;
+            transition: opacity 0.4s;
+        }
+
+        /* Audio wave animation behind model */
+        .audio-rings {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .audio-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            border: 1px solid rgba(255, 64, 129, 0.15);
+            opacity: 0;
+            width: 200px;
+            height: 200px;
+        }
+
+        .audio-ring.active {
+            animation: ring-expand 1.5s ease-out forwards;
+        }
+
+        @keyframes ring-expand {
+            0% { width: 200px; height: 200px; opacity: 0.5; }
+            100% { width: 500px; height: 500px; opacity: 0; }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .top-bar h1 { font-size: 14px; }
+            .controls { padding: 10px 16px; gap: 10px; }
+            .mic-btn { width: 44px; height: 44px; font-size: 18px; }
+            .volume-meter { min-width: 100px; }
+            .sensitivity-control { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text" id="loadingText">Loading Live2D model...</div>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="canvas"></canvas>
+
+    <!-- Audio Rings Effect -->
+    <div class="audio-rings" id="audioRings"></div>
+
+    <!-- Top Bar -->
+    <div class="top-bar">
+        <h1>Voice-Driven Live2D</h1>
+        <div class="model-select-wrapper">
+            <select id="modelSelect">
+                <option value="shizuku">Shizuku</option>
+                <option value="haru">Haru (Cubism 4)</option>
+                <option value="hijiki">Hijiki (Cat)</option>
+                <option value="tororo">Tororo (Cat)</option>
+                <option value="koharu">Koharu</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Bottom Controls -->
+    <div class="controls">
+        <button class="mic-btn" id="micBtn" title="Toggle Microphone">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+        </button>
+        <div class="volume-meter">
+            <span class="volume-meter-label">Volume</span>
+            <div class="volume-bar-container">
+                <div class="volume-bar" id="volumeBar"></div>
+            </div>
+        </div>
+        <div class="sensitivity-control">
+            <label for="sensitivitySlider">Sensitivity</label>
+            <input type="range" id="sensitivitySlider" min="1" max="5" step="0.5" value="2.5">
+        </div>
+    </div>
+
+    <!-- Help Hint -->
+    <div class="help-hint" id="helpHint">
+        Click the microphone button to start voice-driven animation. Move your mouse to control eye tracking.
+    </div>
+
+    <!-- Status Toast -->
+    <div class="status-toast" id="statusToast"></div>
+
+    <!-- External Libraries -->
+    <!-- Live2D Cubism 2 Core -->
+    <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
+    <!-- Live2D Cubism 4 Core -->
+    <script src="https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js"></script>
+    <!-- PixiJS v6 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@6.5.10/dist/browser/pixi.min.js"></script>
+    <!-- pixi-live2d-display (supports both Cubism 2 & 4) -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.4.0/dist/index.min.js"></script>
+
+    <script>
+    (function () {
+        'use strict';
+
+        // ========== Configuration ==========
+        const MODELS = {
+            shizuku: {
+                name: 'Shizuku',
+                url: 'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/shizuku/shizuku.model.json',
+                cubism: 2,
+                scale: 0.28,
+                offsetY: 150,
+            },
+            haru: {
+                name: 'Haru',
+                url: 'https://cdn.jsdelivr.net/gh/guansss/pixi-live2d-display/test/assets/haru/haru_greeter_t03.model3.json',
+                cubism: 4,
+                scale: 0.12,
+                offsetY: 100,
+            },
+            hijiki: {
+                name: 'Hijiki (Cat)',
+                url: 'https://cdn.jsdelivr.net/npm/live2d-widget-model-hijiki@1.0.5/assets/hijiki.model.json',
+                cubism: 2,
+                scale: 0.5,
+                offsetY: 200,
+            },
+            tororo: {
+                name: 'Tororo (Cat)',
+                url: 'https://cdn.jsdelivr.net/npm/live2d-widget-model-tororo@1.0.5/assets/tororo.model.json',
+                cubism: 2,
+                scale: 0.5,
+                offsetY: 200,
+            },
+            koharu: {
+                name: 'Koharu',
+                url: 'https://cdn.jsdelivr.net/npm/live2d-widget-model-koharu@1.0.5/assets/koharu.model.json',
+                cubism: 2,
+                scale: 0.34,
+                offsetY: 150,
+            },
+        };
+
+        // ========== State ==========
+        let app = null;
+        let currentModel = null;
+        let currentModelKey = 'shizuku';
+        let audioContext = null;
+        let analyser = null;
+        let micStream = null;
+        let isMicActive = false;
+        let smoothedVolume = 0;
+        let sensitivity = 2.5;
+        let ringTimer = null;
+
+        // ========== DOM Elements ==========
+        const canvas = document.getElementById('canvas');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const loadingText = document.getElementById('loadingText');
+        const micBtn = document.getElementById('micBtn');
+        const volumeBar = document.getElementById('volumeBar');
+        const modelSelect = document.getElementById('modelSelect');
+        const sensitivitySlider = document.getElementById('sensitivitySlider');
+        const statusToast = document.getElementById('statusToast');
+        const helpHint = document.getElementById('helpHint');
+        const audioRings = document.getElementById('audioRings');
+
+        // ========== Utility Functions ==========
+        function showToast(msg, duration) {
+            duration = duration || 2000;
+            statusToast.textContent = msg;
+            statusToast.classList.add('visible');
+            setTimeout(function () {
+                statusToast.classList.remove('visible');
+            }, duration);
+        }
+
+        function clamp(val, min, max) {
+            return Math.max(min, Math.min(max, val));
+        }
+
+        function spawnRing() {
+            var ring = document.createElement('div');
+            ring.className = 'audio-ring active';
+            audioRings.appendChild(ring);
+            setTimeout(function () {
+                ring.remove();
+            }, 1500);
+        }
+
+        // ========== Initialize PixiJS ==========
+        function initPixi() {
+            app = new PIXI.Application({
+                view: canvas,
+                resizeTo: window,
+                backgroundAlpha: 0,
+                antialias: true,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+            });
+        }
+
+        // ========== Load Live2D Model ==========
+        function loadModel(key) {
+            var config = MODELS[key];
+            if (!config) return;
+
+            currentModelKey = key;
+            loadingText.textContent = 'Loading ' + config.name + '...';
+            loadingOverlay.classList.remove('hidden');
+
+            // Remove current model
+            if (currentModel) {
+                app.stage.removeChild(currentModel);
+                currentModel.destroy();
+                currentModel = null;
+            }
+
+            var Live2DModel = PIXI.live2d.Live2DModel;
+
+            Live2DModel.from(config.url, { autoInteract: false })
+                .then(function (model) {
+                    currentModel = model;
+
+                    // Scale and position
+                    var scaleX = (app.screen.width / model.width) * config.scale * 3;
+                    var scaleY = (app.screen.height / model.height) * config.scale * 3;
+                    var scale = Math.min(scaleX, scaleY);
+                    model.scale.set(scale);
+                    model.x = app.screen.width / 2 - (model.width * scale) / 2;
+                    model.y = app.screen.height / 2 - (model.height * scale) / 2 + config.offsetY;
+
+                    // Add to stage
+                    app.stage.addChild(model);
+
+                    // Enable interactivity
+                    model.interactive = true;
+                    model.buttonMode = true;
+
+                    // Click to trigger motion
+                    model.on('pointerdown', function () {
+                        triggerRandomMotion(model);
+                    });
+
+                    // Set up lip sync hook
+                    setupLipSync(model, config);
+
+                    // Hide loading
+                    loadingOverlay.classList.add('hidden');
+                    showToast(config.name + ' loaded!');
+                })
+                .catch(function (err) {
+                    console.error('Failed to load model:', err);
+                    loadingOverlay.classList.add('hidden');
+                    showToast('Failed to load model. Please try another.');
+                });
+        }
+
+        // ========== Lip Sync Setup ==========
+        function setupLipSync(model, config) {
+            var im = model.internalModel;
+            if (!im) return;
+
+            // Hook into motionManager.update to inject lip sync values
+            var motionMgr = im.motionManager;
+            if (motionMgr) {
+                var originalUpdate = motionMgr.update.bind(motionMgr);
+                motionMgr.update = function (coreModel, dt) {
+                    var result = originalUpdate(coreModel, dt);
+                    // Inject lip sync value
+                    var mouthVal = clamp(smoothedVolume, 0, 1);
+                    setMouthOpen(coreModel, mouthVal, config.cubism);
+                    return result;
+                };
+            }
+        }
+
+        function setMouthOpen(coreModel, value, cubismVersion) {
+            if (!coreModel) return;
+            try {
+                if (cubismVersion === 4 && coreModel.setParameterValueById) {
+                    coreModel.setParameterValueById('ParamMouthOpenY', value);
+                }
+            } catch (e) { /* ignore */ }
+            try {
+                if (coreModel.setParamFloat) {
+                    coreModel.setParamFloat('PARAM_MOUTH_OPEN_Y', value);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // ========== Trigger Random Motion ==========
+        function triggerRandomMotion(model) {
+            if (!model || !model.internalModel) return;
+            var motionMgr = model.internalModel.motionManager;
+            // Try to start a random motion from available groups
+            var defs = motionMgr.definitions;
+            if (defs) {
+                var groups = Object.keys(defs);
+                if (groups.length > 0) {
+                    var group = groups[Math.floor(Math.random() * groups.length)];
+                    var motions = defs[group];
+                    if (motions && motions.length > 0) {
+                        var idx = Math.floor(Math.random() * motions.length);
+                        motionMgr.startMotion(group, idx);
+                    }
+                }
+            }
+        }
+
+        // ========== Mouse Tracking ==========
+        function initMouseTracking() {
+            document.addEventListener('mousemove', function (e) {
+                if (!currentModel) return;
+                // focus() makes the model look at the given point
+                currentModel.focus(e.clientX, e.clientY);
+            });
+
+            // Touch support
+            document.addEventListener('touchmove', function (e) {
+                if (!currentModel || !e.touches[0]) return;
+                currentModel.focus(e.touches[0].clientX, e.touches[0].clientY);
+            }, { passive: true });
+        }
+
+        // ========== Audio / Microphone ==========
+        function initAudio() {
+            return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+                .then(function (stream) {
+                    micStream = stream;
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 512;
+                    analyser.smoothingTimeConstant = 0.4;
+
+                    var source = audioContext.createMediaStreamSource(stream);
+                    source.connect(analyser);
+
+                    return true;
+                });
+        }
+
+        function stopAudio() {
+            if (micStream) {
+                micStream.getTracks().forEach(function (t) { t.stop(); });
+                micStream = null;
+            }
+            if (audioContext && audioContext.state !== 'closed') {
+                audioContext.close();
+                audioContext = null;
+                analyser = null;
+            }
+        }
+
+        function getAudioVolume() {
+            if (!analyser) return 0;
+
+            var dataArray = new Uint8Array(analyser.frequencyBinCount);
+            analyser.getByteFrequencyData(dataArray);
+
+            // Calculate RMS of frequency data
+            var sum = 0;
+            var count = dataArray.length;
+            for (var i = 0; i < count; i++) {
+                var val = dataArray[i] / 255;
+                sum += val * val;
+            }
+            var rms = Math.sqrt(sum / count);
+
+            // Apply sensitivity multiplier
+            return clamp(rms * sensitivity * 3, 0, 1);
+        }
+
+        // ========== Main Update Loop ==========
+        function startUpdateLoop() {
+            app.ticker.add(function () {
+                if (!isMicActive || !analyser) {
+                    // Smoothly decay to 0 when mic is off
+                    smoothedVolume *= 0.85;
+                    if (smoothedVolume < 0.01) smoothedVolume = 0;
+                } else {
+                    var rawVol = getAudioVolume();
+                    // Smooth the volume - fast attack, slower release
+                    if (rawVol > smoothedVolume) {
+                        smoothedVolume = smoothedVolume * 0.3 + rawVol * 0.7; // fast attack
+                    } else {
+                        smoothedVolume = smoothedVolume * 0.8 + rawVol * 0.2; // slow release
+                    }
+                }
+
+                // Update volume bar UI
+                volumeBar.style.width = (smoothedVolume * 100) + '%';
+            });
+        }
+
+        // ========== Audio Ring Effects ==========
+        function startRingEffect() {
+            ringTimer = setInterval(function () {
+                if (isMicActive && smoothedVolume > 0.15) {
+                    spawnRing();
+                }
+            }, 600);
+        }
+
+        // ========== Handle Window Resize ==========
+        function handleResize() {
+            window.addEventListener('resize', function () {
+                if (!currentModel || !app) return;
+                var config = MODELS[currentModelKey];
+                var model = currentModel;
+
+                var scaleX = (app.screen.width / model.texture.width) * config.scale * 3;
+                var scaleY = (app.screen.height / model.texture.height) * config.scale * 3;
+                var scale = Math.min(scaleX, scaleY);
+                model.scale.set(scale);
+                model.x = app.screen.width / 2 - (model.width) / 2;
+                model.y = app.screen.height / 2 - (model.height) / 2 + config.offsetY;
+            });
+        }
+
+        // ========== Event Handlers ==========
+        micBtn.addEventListener('click', function () {
+            if (isMicActive) {
+                // Turn off mic
+                isMicActive = false;
+                micBtn.classList.remove('active');
+                stopAudio();
+                showToast('Microphone off');
+            } else {
+                // Turn on mic
+                initAudio()
+                    .then(function () {
+                        isMicActive = true;
+                        micBtn.classList.add('active');
+                        showToast('Microphone on - speak to animate!');
+                        // Hide help hint after first activation
+                        helpHint.style.opacity = '0';
+                    })
+                    .catch(function (err) {
+                        console.error('Microphone access denied:', err);
+                        showToast('Microphone access denied. Please allow microphone access.');
+                    });
+            }
+        });
+
+        modelSelect.addEventListener('change', function () {
+            loadModel(modelSelect.value);
+        });
+
+        sensitivitySlider.addEventListener('input', function () {
+            sensitivity = parseFloat(sensitivitySlider.value);
+        });
+
+        // ========== Initialize ==========
+        function init() {
+            initPixi();
+            initMouseTracking();
+            startUpdateLoop();
+            startRingEffect();
+            handleResize();
+            loadModel('shizuku');
+        }
+
+        // Start when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+    })();
+    </script>
+</body>
+</html>
